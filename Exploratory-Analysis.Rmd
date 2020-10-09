@@ -1,0 +1,127 @@
+---
+title: "Exploratory Analysis on SwiftKey Dataset"
+author: "kuriboh"
+date: "10/6/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+knitr::opts_chunk$set(cache=TRUE)
+```
+  
+## Load data into memory and does some summary on the three datasets    
+```{r, cache=TRUE}
+twitter_conn <- file('data/en_US/en_US.twitter.txt')
+news_conn <- file('data/en_US/en_US.news.txt')
+blogs_conn <- file('data/en_US/en_US.blogs.txt')
+
+open(twitter_conn)
+open(news_conn)
+open(blogs_conn)
+
+twitter_data <- readLines(twitter_conn, skipNul=TRUE)
+blogs_data <- readLines(blogs_conn, skipNul=TRUE)
+news_data <- readLines(news_conn, skipNul=TRUE)
+
+close(twitter_conn)
+close(blogs_conn)
+close(news_conn)
+
+length(twitter_data)
+max(sapply(twitter_data, nchar))
+
+length(blogs_data)
+max(sapply(blogs_data, nchar))
+
+length(news_data)
+max(sapply(news_data, nchar))
+
+sum(grepl('love', twitter_data)) / sum(grepl('hate', twitter_data))
+head(twitter_data[grepl('biostats', twitter_data)])
+sum(grepl('A computer once beat me at chess, but it was no match for me at kickboxing', twitter_data))
+```
+  
+## Normalizes text in the dataset  
+The first step I want to perform is normalizing words in the datasets:  
+* Transform words to lowercase  
+* Remove all punctuation  
+* Words are separated by only spaces  
+```{r, cache=TRUE}
+normalize_paragraph <- function(paragraph) {
+    remove_non_alphabetical <- function(sentence) {
+        sentence <- strsplit(sentence, '')[[1]]
+        sentence <- sentence[sentence >= 'a' & sentence <= 'z' | sentence == ' ']
+        paste(sentence, collapse='')
+    }
+    n_sentences <- length(paragraph)
+    answer <- list()
+    counter <- 0
+    for (i in 1:n_sentences) {
+        if (class(paragraph[i]) == 'character') {
+            paragraph[i] <- tolower(paragraph[i])
+            paragraph[i] <- remove_non_alphabetical(paragraph[i])
+            words <- strsplit(paragraph[i], ' ')[[1]]
+            
+            counter <- counter + 1
+            answer[[counter]] <- words[nchar(words) > 0]
+        }
+    }
+    answer
+}
+news_data <- normalize_paragraph(news_data)
+blogs_data <- normalize_paragraph(blogs_data)
+twitter_data <- normalize_paragraph(twitter_data)
+```
+  
+## One more optional step, I consider text from those three datasets has the same role. Thus I will merge those dataset into one  
+```{r, cache=TRUE}
+combined_paragraph <- do.call(c, list(blogs_data, news_data, twitter_data))
+# rm(blogs_data, news_data, twitter_data)
+```
+  
+## Does exploratory analysis  
+* Firstly I'm curious about how many sentences are there and how many words in each sentence are there in average  
+```{r, cache=TRUE}
+length(combined_paragraph)
+sum(sapply(combined_paragraph, length))
+mean(sapply(combined_paragraph, length))
+```
+  
+## Get single words occurences  
+```{r, cache=TRUE}
+library(hash)
+dict <- hash()
+increase_count <- function(word) {
+    if (length(word) > 1) {
+         word <- paste(word, ' ')
+    }
+    if (has.key(word, dict)) {
+         dict[[word]] <<- dict[[word]] + 1
+    } else {
+         dict[[word]] <<- 1
+    }
+}
+for (sentence in combined_paragraph) {
+    for (word in sentence) {
+        increase_count(word)
+    }
+}
+```
+  
+```{r}
+one_gram_distribution <- unlist(as.list(dict))
+one_gram_distribution <- sort(one_gram_distribution, decreasing=TRUE)
+head(one_gram_distribution)
+```
+  
+```{r}
+library(ggplot2)
+first_20_words <- one_gram_distribution[1:20]
+first_20_words <- data.frame(word=factor(names(first_20_words), levels=names(first_20_words)), occurrences=unname(first_20_words))
+ggplot(first_20_words, aes(x=word, y=occurrences, fill=word)) + geom_bar(stat="identity")
+```
+  
+## Some inference and conclusion  
+* Most of the most common words are prepositions  
+* Some other common words are to-be, popular verbs and subjects  
