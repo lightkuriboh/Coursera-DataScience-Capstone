@@ -1,0 +1,126 @@
+---
+title: "NGramModel"
+author: "kuriboh"
+date: "10/21/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE)
+knitr::opts_chunk$set(cache=TRUE)
+```
+  
+## Load data into memory and does some summary on the three datasets    
+```{r}
+twitter_conn <- file('data/en_US/en_US.twitter.txt')
+news_conn <- file('data/en_US/en_US.news.txt')
+blogs_conn <- file('data/en_US/en_US.blogs.txt')
+
+open(twitter_conn)
+open(news_conn)
+open(blogs_conn)
+
+twitter_data <- readLines(twitter_conn, skipNul=TRUE)
+blogs_data <- readLines(blogs_conn, skipNul=TRUE)
+news_data <- readLines(news_conn, skipNul=TRUE)
+
+close(twitter_conn)
+close(blogs_conn)
+close(news_conn)
+```
+  
+## Setting seed, loading required libraries  
+```{r, message=FALSE}
+library(tm)
+library(dplyr)
+library(wordcloud)
+library(ggplot2)
+library(data.table)
+library(RWeka)
+library(markovchain)
+
+set.seed(210199)
+```
+  
+## One more optional step, I consider text from those three datasets has the same role. Thus I will merge those dataset into one  
+```{r}
+combined_paragraph <- do.call(c, list(blogs_data, news_data, twitter_data))
+```
+  
+## Since the data size is large (100M words), I will extract 1% of the dataset  
+```{r}
+select_proportion <- 0.01
+combined_paragraph <- combined_paragraph[rbinom(n=length(combined_paragraph), size=1, prob=select_proportion) == 1]
+```
+  
+## Normalizes text in the dataset  
+The first step I want to perform is normalizing words in the datasets:  
+* Transform words to lowercase  
+* Remove all punctuation  
+* Words are separated by only spaces  
+```{r}
+replacePunctuation <- tm::content_transformer(function(x) gsub("[^[:alnum:][:space:]'`]", " ", x))
+clean_corpus <- function(corpus) {
+    corpus %>%
+        tm::tm_map(tm::stripWhitespace) %>%
+        tm::tm_map(replacePunctuation) %>%
+        tm::tm_map(tm::removeNumbers) %>%
+        tm::tm_map(content_transformer(tolower))
+}
+
+combined_paragraph <- tm::VCorpus(tm::VectorSource(combined_paragraph))
+clean_corpus(combined_paragraph)
+```
+  
+## Making training set and test set with proportion 3-7   
+```{r}
+test_fraction <- 0.3
+chosen_indices <- rbinom(n=length(combined_paragraph), size=1, prob=test_fraction)
+train_data <- combined_paragraph[chosen_indices == 0]
+test_data <- combined_paragraph[chosen_indices == 1]
+```
+  
+## Removing "bad" words  
+I found [this project](https://github.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words) which lists bad words in many languages  
+```{r}
+load_bad_words <- function(bad_words_url) {
+    connection <- url(bad_words_url)
+    lines <- readLines(connection)
+    close(connection)
+    lines
+}
+
+bad_words <- load_bad_words(
+    "https://raw.githubusercontent.com/LDNOOBW/List-of-Dirty-Naughty-Obscene-and-Otherwise-Bad-Words/master/en"
+)
+
+pretty_train_data <- tm_map(train_data, removeWords, bad_words)
+```
+  
+## Does exploratory analysis  
+* Making a function to present N-Gram  
+```{r}
+create_ngrams_data_frame <- function (document_term_matrix) {
+    frequencies <- colSums(document_term_matrix)
+    ngrams <- data.frame(ngram = names(frequencies), frequency=frequencies, stringsAsFactors=FALSE)
+    ngrams <- arrange(ngrams, desc(frequency))
+    rownames(ngrams) <- 1:length(frequencies)
+    ngrams
+}
+
+making_document_term_matrix <- function (n_gram) {
+    DocumentTermMatrix(pretty_train_data,
+                       control = list(
+                           tokenize=NGramTokenizer(x, Weka_control(min=n_gram, max=n_gram)),
+                           wordLengths=c(1, Inf)
+                           )
+                       )
+}
+```
+  
+* Getting N-Gram distribution of size from One to Four  
+```{r}
+one_grams <- create_ngrams_data_frame(as.matrix(making_document_term_matrix(1)))
+one_grams[1:50, ]
+```  
+  
