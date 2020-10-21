@@ -47,9 +47,9 @@ set.seed(210199)
 combined_paragraph <- do.call(c, list(blogs_data, news_data, twitter_data))
 ```
   
-## Since the data size is large (100M words), I will extract 1% of the dataset  
+## Since the data size is large (100M words), I will extract 0.5% of the dataset  
 ```{r}
-select_proportion <- 0.01
+select_proportion <- 0.00075
 combined_paragraph <- combined_paragraph[rbinom(n=length(combined_paragraph), size=1, prob=select_proportion) == 1]
 ```
   
@@ -72,7 +72,7 @@ combined_paragraph <- tm::VCorpus(tm::VectorSource(combined_paragraph))
 clean_corpus(combined_paragraph)
 ```
   
-## Making training set and test set with proportion 3-7   
+## Making training set and test set with ratio 3-7   
 ```{r}
 test_fraction <- 0.3
 chosen_indices <- rbinom(n=length(combined_paragraph), size=1, prob=test_fraction)
@@ -109,18 +109,73 @@ create_ngrams_data_frame <- function (document_term_matrix) {
 }
 
 making_document_term_matrix <- function (n_gram) {
+    n_gram_tokenizer <- function(x) {
+        NGramTokenizer(x, Weka_control(min=n_gram, max=n_gram))
+    }
     DocumentTermMatrix(pretty_train_data,
                        control = list(
-                           tokenize=NGramTokenizer(x, Weka_control(min=n_gram, max=n_gram)),
+                           tokenize=n_gram_tokenizer,
                            wordLengths=c(1, Inf)
                            )
                        )
 }
 ```
   
-* Getting N-Gram distribution of size from One to Four  
+Getting N-Gram distribution of size from One to Four  
+* 1-Gram  
 ```{r}
 one_grams <- create_ngrams_data_frame(as.matrix(making_document_term_matrix(1)))
 one_grams[1:50, ]
 ```  
+
+* 2-Gram  
+```{r}
+two_grams <- create_ngrams_data_frame(as.matrix(making_document_term_matrix(2)))
+two_grams[1:50, ]
+```  
+
+* 3-Gram  
+```{r}
+three_grams <- create_ngrams_data_frame(as.matrix(making_document_term_matrix(3)))
+three_grams[1:50, ]
+```  
+
+* 4-Gram  
+```{r}
+four_grams <- create_ngrams_data_frame(as.matrix(making_document_term_matrix(4)))
+four_grams[1:50, ]
+```  
+  
+# N-Gram plots  
+```{r}
+draw_ngram_plot <- function (ngrams) {
+    ggplot(ngrams, aes(x=ngram, y=frequency, fill=ngram)) +
+        geom_bar(stat='identity') +
+        scale_x_discrete(limits=ngrams$ngram) +
+        ggtitle(paste(length(strsplit(ngrams[1]$ngram, ' ')[[1]]), '-Grams: ', 'Top', nrow(ngrams), 'word Frequencies in the corpus')) +
+        ylab('Frequency') +
+        theme(axis.text.x=element_text(size=12, angle=90, hjust=1, vjust=0.5)) +
+        theme(legend.position="none")
+}
+words_cloud <- function(ngrams) {
+    wordcloud(ngrams$ngram, ngrams$frequency, scale = c(4, 0.5), colors = brewer.pal(8, "Dark2"))
+}
+
+top_one_grams <- one_grams[1:50, ]
+top_two_grams <- two_grams[1:50, ]
+top_three_grams <- three_grams[1:50, ]
+top_four_grams <- four_grams[1:50, ]
+
+draw_ngram_plot(top_one_grams)
+draw_ngram_plot(top_two_grams)
+draw_ngram_plot(top_three_grams)
+draw_ngram_plot(top_four_grams)
+
+words_cloud(top_one_grams)
+words_cloud(top_two_grams)
+words_cloud(top_three_grams)
+words_cloud(top_four_grams)
+# save(one_grams, two_grams, three_grams, four_grams, file='ngrams_data.RData')
+```
+
   
