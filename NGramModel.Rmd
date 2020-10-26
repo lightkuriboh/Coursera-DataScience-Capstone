@@ -39,6 +39,7 @@ library(data.table)
 library(RWeka)
 library(markovchain)
 
+
 set.seed(210199)
 ```
   
@@ -47,7 +48,7 @@ set.seed(210199)
 combined_paragraph <- do.call(c, list(blogs_data, news_data, twitter_data))
 ```
   
-## Since the data size is large (100M words), I will extract 0.5% of the dataset  
+## Since the data size is large (100M words), I will extract 0.3% of the dataset  
 ```{r}
 select_proportion <- 0.00075
 combined_paragraph <- combined_paragraph[rbinom(n=length(combined_paragraph), size=1, prob=select_proportion) == 1]
@@ -97,8 +98,7 @@ bad_words <- load_bad_words(
 pretty_train_data <- tm_map(train_data, removeWords, bad_words)
 ```
   
-## Does exploratory analysis  
-* Making a function to present N-Gram  
+## Make a function to present N-Gram  
 ```{r}
 create_ngrams_data_frame <- function (document_term_matrix) {
     frequencies <- colSums(document_term_matrix)
@@ -121,6 +121,7 @@ making_document_term_matrix <- function (n_gram) {
 }
 ```
   
+## Does exploratory analysis  
 Getting N-Gram distribution of size from One to Four  
 * 1-Gram  
 ```{r}
@@ -178,4 +179,113 @@ words_cloud(top_four_grams)
 # save(one_grams, two_grams, three_grams, four_grams, file='ngrams_data.RData')
 ```
 
+## Words coverage  
+```{r}
+words_coverage <- 100 * cumsum(one_grams$frequency) / sum(one_grams$frequency)
+
+number_of_words_to_cove_50_percent <- length(words_coverage[words_coverage <= 50.0])
+number_of_words_to_cove_50_percent
+
+number_of_words_to_cove_90_percent <- length(words_coverage[words_coverage <= 90.0])
+number_of_words_to_cove_90_percent
+
+number_of_words_to_cove_95_percent <- length(words_coverage[words_coverage <= 95.0])
+number_of_words_to_cove_95_percent
+
+nrow(one_grams[one_grams])
+nrow(two_grams)
+nrow(three_grams)
+nrow(four_grams)
+```
+  
+## Create model  
+### The idea is to use Markov Chain  
+#### Create phrase history, as a preparation for Markov Transition Matrix  
+```{r}
+MIN_COUNT <- 2
+
+n_grams <- do.call(rbind, list(two_grams, three_grams, four_grams))
+n_grams <- n_grams[n_grams$frequency > MIN_COUNT, ]
+
+create_histories <- function(n_grams) {
+      last_words <- vector('character', nrow(n_grams))
+      histories <- vector('character', nrow(n_grams))
+      
+      for (row_number in 1:nrow(n_grams)) {
+          words <- strsplit(n_grams$ngram[row_number], ' ')[[1]]
+          last_words[[row_number]] <- words[length(words)]
+          histories[[row_number]] <- ifelse(length(words) > 1, paste(words[-length(words)], collapse=' '), "<blank>")
+      }
+      
+      data.table::data.table(word=last_words, history=histories, frequency=n_grams$frequency)
+}
+data_with_history <- create_histories(n_grams=n_grams)
+sample_n(data_with_history, 10)
+```
+  
+#### Create Markov Transition Matrix  
+```{r}
+build_transition_matrix <- function (data_with_history) {
+    histories <- unique(data_with_history$history)
+    words <- unique(data_with_history$word)
+    
+    transition_matrix <- matrix(rep(0, length(histories) * length(words)), nrow=length(histories), ncol=length(words))
+    rownames(transition_matrix) <- histories
+    colnames(transition_matrix) <- words
+    
+    for (r in 1:nrow(data_with_history)) {
+        row_name <- data_with_history$history[r]
+        col_name <- data_with_history$word[r]
+        current_value <- transition_matrix[row_name, col_name]
+        transition_matrix[row_name, col_name] <- current_value  + data_with_history$frequency[r]
+    }
+  
+    t(apply(transition_matrix, 1, function(current_row) {
+        row_sum <- sum(current_row)
+        current_row / row_sum
+    }))
+}
+
+model <- build_transition_matrix(data_with_history=data_with_history)
+dim(model)
+View(model)
+```  
+  
+#### Create function to get top suggestions  
+```{r}
+words_in_history <- unique(unname(unlist(sapply(rownames(model), strsplit, ' '))))
+
+remove_unseen_words <- function (sentence) {
+    words <- strsplit(sentence, ' ')[[1]]
+    paste(words[words %in% words_in_history], collapse=' ')
+}
+
+get_data_from_matrix <- function (history, model, top) {
+    top_suggestions_indices <- head(order(model[history, ], decreasing = TRUE), n=top)
+    top_suggestions <- model[history, top_suggestions_indices]
+    names(top_suggestions) <- colnames(model)[top_suggestions_indices]
+    top_suggestions
+}
+
+get_top_suggestions <- function (history, model, top=3) {
+    history <- remove_unseen_words(history)
+    if (history == '') return('it')
+    if (history %in% rownames(model)) {
+        return(get_data_from_matrix(history, model, top))
+    }
+    get_top_suggestions(paste(strsplit(history, ' ')[[1]][-1], collapse=' '), model, top)
+}
+
+limit <- 10
+get_top_suggestions("The guy in front of me just bought a pound of bacon, a bouquet, and a case of", model, limit)
+get_top_suggestions("You're the reason why I smile everyday. Can you follow me please? It would mean the", model, limit)
+get_top_suggestions("Hey sunshine, can you follow me and make me the", model, limit)
+get_top_suggestions("Very early observations on the Bills game: Offense still struggling but the", model, limit)
+get_top_suggestions("Go on a romantic date at the", model, limit)
+get_top_suggestions("Well I'm pretty sure my granny has some old bagpipes in her garage I'll dust them off and be on my", model, limit)
+get_top_suggestions("Ohhhhh #PointBreak is on tomorrow. Love that film and haven't seen it in quite some", model, limit)
+get_top_suggestions("After the ice bucket challenge Louis will push his long wet hair out of his eyes with his little", model, limit)
+get_top_suggestions("Be grateful for the good times and keep the faith during the", model, limit)
+get_top_suggestions("If this isn't the cutest thing you've ever seen, then you must be", model, limit)
+```
   
