@@ -24,8 +24,9 @@ shinyServer(function(input, output, session) {
             current_row / row_sum
         }))
     }
+    transition_matrix <- build_transition_matrix(distribution_matrix=distribution_matrix)
 
-    get_top_suggestions <- function (history, model, top=3) {
+    get_top_suggestions <- function (history, model, top=10) {
         clean_sentence <- function(sentence) {
             replacePunctuation <- tm::content_transformer(
                 function(x) gsub("[^[:alnum:][:space:]'`]", " ", x)
@@ -89,10 +90,13 @@ shinyServer(function(input, output, session) {
         if (get_last_character(words_history) == '.') {
             return(c(default_suggestion))
         }
+        # predicted_words <- get_top_suggestions(history=words_history,
+        #                                        model=build_transition_matrix(
+        #                                            distribution_matrix
+        #                                            )
+        #                                        )
         predicted_words <- get_top_suggestions(history=words_history,
-                                               model=build_transition_matrix(
-                                                   distribution_matrix
-                                                   )
+                                               model=transition_matrix
                                                )
         predicted_words
     })
