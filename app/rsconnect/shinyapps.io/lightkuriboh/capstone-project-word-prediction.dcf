@@ -1,0 +1,13 @@
+name: capstone-project-word-prediction
+title: capstone-project-word-prediction
+username:
+account: lightkuriboh
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 3119395
+bundleId: 3795669
+url: https://lightkuriboh.shinyapps.io/capstone-project-word-prediction/
+when: 1603957863.89378
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: ngrams_data.RData
